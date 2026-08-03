@@ -1,9 +1,10 @@
-# 배포 서버에 두고 쓰는 파일. Docker Hub에서 이미지를 받아 실행만 한다.
+# 배포 서버에 두고 쓰는 파일. GHCR에서 이미지를 받아 실행만 한다.
 # DB·S3 접속 정보는 이미지에도 여기에도 없다. 앱이 기동하면서 Parameter Store
 # (/test-wes/prod/*)에서 읽는다.
 services:
   app:
-    image: ${DOCKERHUB_USERNAME}/test-wes:${IMAGE_TAG:-latest}
+    image: ghcr.io/${OWNER_LOWERCASE}/test-wes:${IMAGE_TAG:-latest}
+    container_name: test-wes-app
     restart: unless-stopped
     ports:
       - "8080:8080"

@@ -1,0 +1,17 @@
+# CI에는 AWS 자격증명도 리전도 없다. 그런데 spring-cloud-aws-starter-parameter-store가
+# 클래스패스에 있으면 프로필과 무관하게 SsmClient 빈을 만들려 하고, 리전을 못 찾아
+# SdkClientException("Unable to load region...")으로 컨텍스트 로딩이 통째로 깨진다.
+#
+# 테스트는 Testcontainers postgres만 쓰고 Parameter Store를 타지 않으므로 아예 끈다.
+# prod 프로필은 이 파일을 읽지 않으니 영향이 없다.
+spring:
+  cloud:
+    aws:
+      ssm:
+        enabled: false
+      # 리전·자격증명 프로바이더 체인도 같은 이유로 돌 필요가 없다.
+      region:
+        static: ap-northeast-2
+      credentials:
+        access-key: test
+        secret-key: test
