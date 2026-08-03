@@ -1,0 +1,23 @@
+# 서버에는 이 파일만 올라간다. CD가 SSM으로 실어 보내므로 리포지토리 전체를 받지 않는다.
+# DB·S3 접속 정보는 여기에도 이미지에도 없다. 앱이 기동하면서 Parameter Store
+# (/test-wes/prod/*)에서 읽는다. 자격증명은 EC2 인스턴스 프로파일에서 온다.
+services:
+  test-wes-server:
+    image: ghcr.io/${OWNER_LOWERCASE}/test-wes-server:${IMAGE_TAG:-latest}
+    container_name: test-wes-app
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SERVER_PORT=8080
+      - AWS_REGION=ap-northeast-2
+      - TZ=Asia/Seoul
+      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

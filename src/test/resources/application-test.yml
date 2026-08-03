@@ -1,0 +1,12 @@
+# 테스트는 AWS에 나가지 않는다. presigned URL 서명은 순수 로컬 계산이라
+# 아무 자격증명이나 있으면 되고, 없으면 SDK가 자격증명 탐색에 실패해 기동이 깨진다.
+spring:
+  cloud:
+    aws:
+      credentials:
+        access-key: test-access-key
+        secret-key: test-secret-key
+
+app:
+  s3:
+    bucket: test-wes-bucket

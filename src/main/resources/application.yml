@@ -3,6 +3,14 @@ spring:
   datasource:
     driver-class-name: org.postgresql.Driver
 
+  cloud:
+    aws:
+      region:
+        # prod 전용이 아니다. Parameter Store를 안 쓰는 local·테스트에서도 SsmClient 빈이
+        # 만들어지고, 리전을 못 찾으면 기동 자체가 실패한다. AWS_REGION 환경변수나
+        # ~/.aws/config가 없는 컨테이너·CI 러너가 그 경우다.
+        static: ap-northeast-2
+
   jpa:
     open-in-view: false
     properties:
@@ -10,3 +18,23 @@ spring:
         # 서버·DB 시간대를 KST로 고정한다. 못박지 않으면 JVM 기본 타임존을 따라가 서버 환경에 좌우된다.
         jdbc:
           time_zone: Asia/Seoul
+
+  # 수천 장 분량의 presigned URL을 한 번에 발급한다. 기본 요청 크기로는 잘린다.
+  servlet:
+    multipart:
+      enabled: false
+
+app:
+  s3:
+    # 프로필별로 덮어쓴다. prod는 Parameter Store에서 온다.
+    bucket: ""
+    # 프론트가 수천 장을 순차 업로드하는 동안 만료되지 않을 만큼은 길어야 한다.
+    presigned-url-ttl: 30m
+    # 한 번의 요청으로 발급할 수 있는 URL 개수 상한.
+    max-batch-size: 1000
+  cluster:
+    # 유사도 임계값을 안 주면 쓰는 기본값(코사인 유사도).
+    default-threshold: 0.9
+
+cors:
+  allowed-origins: http://localhost:5173

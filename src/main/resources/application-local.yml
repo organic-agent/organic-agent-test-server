@@ -6,11 +6,15 @@ spring:
     password: wes
 
   jpa:
+    # 스키마는 Flyway가 소유한다. Hibernate는 엔티티와 어긋나는지 확인만 한다.
     hibernate:
-      ddl-auto: create
-    generate-ddl: true
+      ddl-auto: validate
     show-sql: true
-    defer-datasource-initialization: true
     properties:
       hibernate:
         format_sql: true
+
+app:
+  s3:
+    # 로컬에선 실제 업로드가 안 된다. presigned URL 형태만 확인하는 용도.
+    bucket: test-wes-local

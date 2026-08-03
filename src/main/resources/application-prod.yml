@@ -6,18 +6,13 @@
 #   /test-wes/prod/spring.datasource.password  (SecureString)
 #   /test-wes/prod/app.s3.bucket
 #   /test-wes/prod/springdoc.server-url
+#   /test-wes/prod/cors.allowed-origins
 spring:
   config:
     import: aws-parameterstore:/test-wes/prod/
 
-  cloud:
-    aws:
-      region:
-        static: ap-northeast-2
-
   jpa:
+    # 스키마는 Flyway가 소유한다. Hibernate는 엔티티와 어긋나는지 확인만 한다.
     hibernate:
-      ddl-auto: update
-    generate-ddl: true
+      ddl-auto: validate
     show-sql: false
-    defer-datasource-initialization: true
