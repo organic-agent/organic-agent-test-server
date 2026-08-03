@@ -1,0 +1,14 @@
+# 배포 서버에 두고 쓰는 파일. Docker Hub에서 이미지를 받아 실행만 한다.
+# DB·S3 접속 정보는 이미지에도 여기에도 없다. 앱이 기동하면서 Parameter Store
+# (/test-wes/prod/*)에서 읽는다.
+services:
+  app:
+    image: ${DOCKERHUB_USERNAME}/test-wes:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      AWS_REGION: ap-northeast-2
+    # 자격증명은 EC2 인스턴스 프로파일(IMDS)에서 온다. 액세스 키를 넣지 않는다.
+    # 인스턴스 롤에 ssm:GetParametersByPath 권한이 필요하다.

@@ -1,0 +1,16 @@
+spring:
+  # /wes/local/*
+  datasource:
+    url: jdbc:postgresql://localhost:5432/wes
+    username: wes
+    password: wes
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+    generate-ddl: true
+    show-sql: true
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        format_sql: true

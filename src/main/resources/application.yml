@@ -1,0 +1,12 @@
+# 프로필 무관. 접속 정보(url·계정·비밀번호)는 Parameter Store에서 온다.
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        # 서버·DB 시간대를 KST로 고정한다. 못박지 않으면 JVM 기본 타임존을 따라가 서버 환경에 좌우된다.
+        jdbc:
+          time_zone: Asia/Seoul

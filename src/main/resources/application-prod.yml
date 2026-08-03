@@ -1,0 +1,23 @@
+# RDS·S3 엔드포인트는 Terraform이 띄울 때마다 바뀌고, 도메인은 공개 리포지토리에
+# 남길 이유가 없다. 이 파일에 박지 않고 기동 시 Parameter Store에서 읽는다.
+#
+#   /test-wes/prod/spring.datasource.url
+#   /test-wes/prod/spring.datasource.username
+#   /test-wes/prod/spring.datasource.password  (SecureString)
+#   /test-wes/prod/app.s3.bucket
+#   /test-wes/prod/springdoc.server-url
+spring:
+  config:
+    import: aws-parameterstore:/test-wes/prod/
+
+  cloud:
+    aws:
+      region:
+        static: ap-northeast-2
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    generate-ddl: true
+    show-sql: false
+    defer-datasource-initialization: true
