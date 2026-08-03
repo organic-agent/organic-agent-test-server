@@ -1,8 +1,17 @@
-# 테스트는 AWS에 나가지 않는다. presigned URL 서명은 순수 로컬 계산이라
-# 아무 자격증명이나 있으면 되고, 없으면 SDK가 자격증명 탐색에 실패해 기동이 깨진다.
+# CI에는 AWS 자격증명도 리전도 없다. 그런데 spring-cloud-aws-starter-parameter-store가
+# 클래스패스에 있으면 프로필과 무관하게 SsmClient 빈을 만들려 하고, 리전을 못 찾아
+# SdkClientException("Unable to load region...")으로 컨텍스트 로딩이 통째로 깨진다.
+#
+# 이 설정을 application.yml이 아니라 프로필 파일에 두는 이유: 테스트 클래스패스의
+# application.yml은 메인 application.yml을 통째로 가려서, app.s3.* 나 cors.allowed-origins
+# 같은 공통 설정이 조용히 사라진다.
 spring:
   cloud:
     aws:
+      ssm:
+        enabled: false
+      # presigned URL 서명은 순수 로컬 계산이라 아무 자격증명이나 있으면 되고,
+      # 없으면 SDK가 자격증명 탐색에 실패해 기동이 깨진다.
       credentials:
         access-key: test-access-key
         secret-key: test-secret-key

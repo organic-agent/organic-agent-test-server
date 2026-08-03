@@ -1,0 +1,10 @@
+# src는 제외하면 안 된다. Dockerfile이 이미지 안에서 COPY src src 후 bootJar를 돌린다.
+.git
+.github
+.gradle
+build
+.idea
+*.iml
+.kotlin
+HELP.md
+docker-compose.yml
