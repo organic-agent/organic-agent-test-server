@@ -2,11 +2,16 @@ package com.soma.testwes.photo
 
 import com.soma.testwes.config.AppProperties
 import com.soma.testwes.gallery.GalleryService
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
+import java.time.Instant
 import java.util.UUID
 
 @Service
@@ -71,6 +76,39 @@ class PhotoService(
         return embeddings.size
     }
 
+    /**
+     * 조회 화면이 쓰는 목록. 버킷은 전면 비공개(퍼블릭 액세스 차단)라 s3Key만으로는 아무것도
+     * 못 띄우므로, 사진마다 presigned GET URL을 함께 내려 <img src>에 그대로 꽂게 한다.
+     *
+     * 클러스터링 결과(GET /clusters)는 s3Key만 돌려주니, 프론트는 여기서 받은 s3Key -> viewUrl
+     * 로 묶음을 그리면 된다.
+     */
+    fun list(galleryId: Long, photographerId: Long, status: PhotoStatus?, page: Int, size: Int): PhotoPage {
+        galleryService.getOwned(galleryId, photographerId)
+
+        require(page >= 0) { "page는 0 이상이어야 합니다 (요청: $page)" }
+        require(size in 1..properties.s3.maxBatchSize) {
+            "size는 1 ~ ${properties.s3.maxBatchSize} 사이여야 합니다 (요청: $size)"
+        }
+
+        // id 오름차순 = 업로드 URL을 발급한 순서. 페이지를 넘겨도 순서가 흔들리지 않는다.
+        val pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "id"))
+        val found = if (status == null) {
+            photoRepository.findAllByGalleryId(galleryId, pageable)
+        } else {
+            photoRepository.findAllByGalleryIdAndStatus(galleryId, status, pageable)
+        }
+
+        return PhotoPage(
+            photos = found.content.map(::toView),
+            page = found.number,
+            size = found.size,
+            totalCount = found.totalElements,
+            hasNext = found.hasNext(),
+            viewUrlTtlSeconds = properties.s3.viewUrlTtl.seconds,
+        )
+    }
+
     fun summarize(galleryId: Long, photographerId: Long): PhotoSummary {
         galleryService.getOwned(galleryId, photographerId)
         return PhotoSummary(
@@ -99,6 +137,18 @@ class PhotoService(
         return "galleries/$galleryId/${UUID.randomUUID()}$suffix"
     }
 
+    private fun toView(photo: Photo) = PhotoView(
+        photoId = photo.requiredId,
+        s3Key = photo.s3Key,
+        originalFilename = photo.originalFilename,
+        contentType = photo.contentType,
+        status = photo.status,
+        createdAt = photo.createdAt,
+        // PENDING은 URL만 발급되고 실제 객체는 아직 없을 수 있다. URL을 주면 프론트의
+        // <img>가 깨진 이미지를 그리므로, 올라온 것이 확실한 사진에만 채운다.
+        viewUrl = if (photo.status == PhotoStatus.PENDING) null else presignGet(photo.s3Key),
+    )
+
     private fun presignPut(key: String, contentType: String): String {
         val putRequest = PutObjectRequest.builder()
             .bucket(properties.s3.bucket)
@@ -114,11 +164,53 @@ class PhotoService(
 
         return s3Presigner.presignPutObject(presignRequest).url().toExternalForm()
     }
+
+    /**
+     * 버킷이 비공개라 브라우저가 객체를 직접 못 받는다. 서명된 GET URL이 CloudFront 없이
+     * 이미지를 띄우는 유일한 방법이다.
+     *
+     * 서명에는 EC2 인스턴스 롤의 임시 자격증명이 쓰인다. 그 세션이 만료되면 TTL이 남아 있어도
+     * URL이 함께 죽으므로, view-url-ttl을 몇 시간 단위로 늘리려면 그 점을 먼저 따져야 한다.
+     */
+    private fun presignGet(key: String): String {
+        val getRequest = GetObjectRequest.builder()
+            .bucket(properties.s3.bucket)
+            .key(key)
+            .build()
+
+        val presignRequest = GetObjectPresignRequest.builder()
+            .signatureDuration(properties.s3.viewUrlTtl)
+            .getObjectRequest(getRequest)
+            .build()
+
+        return s3Presigner.presignGetObject(presignRequest).url().toExternalForm()
+    }
 }
 
 data class NewPhoto(val filename: String, val contentType: String)
 
 data class IssuedUpload(val photoId: Long, val s3Key: String, val uploadUrl: String)
+
+data class PhotoView(
+    val photoId: Long,
+    val s3Key: String,
+    val originalFilename: String,
+    val contentType: String,
+    val status: PhotoStatus,
+    val createdAt: Instant,
+    /** 서명된 S3 GET URL. 아직 안 올라온(PENDING) 사진은 null. */
+    val viewUrl: String?,
+)
+
+data class PhotoPage(
+    val photos: List<PhotoView>,
+    val page: Int,
+    val size: Int,
+    val totalCount: Long,
+    val hasNext: Boolean,
+    /** viewUrl이 살아 있는 시간. 프론트는 이 시간이 지나기 전에 목록을 다시 불러야 한다. */
+    val viewUrlTtlSeconds: Long,
+)
 
 data class PhotoEmbedding(val photoId: Long, val vector: FloatArray) {
 

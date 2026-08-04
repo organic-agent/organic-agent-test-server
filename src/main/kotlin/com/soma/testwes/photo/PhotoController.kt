@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
@@ -59,6 +60,22 @@ class PhotoController(
         val embeddings = request.embeddings.map { PhotoEmbedding(it.photoId, it.vector) }
         return CountResponse(photoService.applyEmbeddings(galleryId, principal.photographerId, embeddings))
     }
+
+    /**
+     * 조회 화면용 사진 목록. 사진마다 서명된 GET URL(viewUrl)이 붙어 오므로 그대로 <img src>에
+     * 넣으면 된다. 버킷이 비공개라 s3Key만으로는 이미지를 띄울 수 없다.
+     *
+     * GET /clusters 는 s3Key 목록만 주므로, 여기서 받은 s3Key -> viewUrl 로 묶음을 그린다.
+     * status=UPLOADED 처럼 걸러 받을 수 있고, 생략하면 PENDING까지 전부 나온다.
+     */
+    @GetMapping
+    fun list(
+        @AuthenticationPrincipal principal: PhotographerPrincipal,
+        @PathVariable galleryId: Long,
+        @RequestParam(required = false) status: PhotoStatus?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "200") size: Int,
+    ): PhotoPage = photoService.list(galleryId, principal.photographerId, status, page, size)
 
     @GetMapping("/summary")
     fun summary(
