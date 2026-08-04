@@ -16,3 +16,16 @@ spring:
     hibernate:
       ddl-auto: validate
     show-sql: false
+
+# 이 프로필에서만 잡는다. 로컬은 프론트(localhost:5173)와 앱(localhost:8080)이
+# 포트만 다른 같은 사이트라 기본값 Lax로도 쿠키가 실린다.
+server:
+  servlet:
+    session:
+      cookie:
+        # 배포 API는 test-api.easyselect.kr, 프론트는 localhost — 서로 다른 사이트다.
+        # Lax면 로그인 응답의 쿠키는 저장되지만 이후 fetch에 실리지 않아 전부 401이 된다.
+        same-site: none
+        # None은 Secure 없이는 브라우저가 쿠키 자체를 거부한다. ALB가 HTTPS를 종단하고
+        # 앱은 평문 8080으로 받으므로, 요청 스킴으로 판단하게 두면 안 되고 못박아야 한다.
+        secure: true
