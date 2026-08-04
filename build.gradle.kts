@@ -37,6 +37,9 @@ dependencies {
     implementation("io.awspring.cloud:spring-cloud-aws-starter-parameter-store")
     // presigned URL 발급용. 이미지 바이트는 이 서버를 거치지 않는다.
     implementation("io.awspring.cloud:spring-cloud-aws-starter-s3")
+    // 임베딩 Lambda를 비동기로 깨우는 용도. Spring Cloud AWS에는 Lambda 스타터가 없어
+    // SDK 모듈을 직접 넣는다(버전은 위 BOM이 관리한다).
+    implementation("software.amazon.awssdk:lambda")
 
     // 세션 로그인. 가입 API는 없고 DB에 직접 넣은 계정으로만 로그인한다.
     implementation("org.springframework.boot:spring-boot-starter-security")

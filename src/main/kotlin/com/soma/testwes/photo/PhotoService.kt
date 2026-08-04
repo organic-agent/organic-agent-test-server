@@ -2,11 +2,16 @@ package com.soma.testwes.photo
 
 import com.soma.testwes.config.AppProperties
 import com.soma.testwes.gallery.GalleryService
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
+import java.time.Instant
 import java.util.UUID
 
 @Service
@@ -71,6 +76,48 @@ class PhotoService(
         return embeddings.size
     }
 
+    /**
+     * 조회 화면용 목록. 버킷이 비공개라 프론트는 s3Key만으로 이미지를 띄울 수 없고,
+     * 여기서 사진마다 서명된 GET URL을 붙여 준다. 클러스터 화면도 이 응답으로
+     * s3Key -> viewUrl 대응표를 만든다(클러스터 응답에는 key만 들어 있다).
+     */
+    fun list(galleryId: Long, photographerId: Long, status: PhotoStatus?, page: Int, size: Int): PhotoPage {
+        galleryService.getOwned(galleryId, photographerId)
+
+        require(page >= 0) { "page는 0 이상이어야 합니다 (요청: $page)" }
+        require(size in 1..properties.s3.maxBatchSize) {
+            "size는 1 ~ ${properties.s3.maxBatchSize} 사이여야 합니다 (요청: $size)"
+        }
+
+        val pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "id"))
+        val found = if (status == null) {
+            photoRepository.findAllByGalleryId(galleryId, pageable)
+        } else {
+            photoRepository.findAllByGalleryIdAndStatus(galleryId, status, pageable)
+        }
+
+        return PhotoPage(
+            photos = found.content.map { photo ->
+                PhotoView(
+                    photoId = photo.requiredId,
+                    s3Key = photo.s3Key,
+                    originalFilename = photo.originalFilename,
+                    contentType = photo.contentType,
+                    status = photo.status,
+                    createdAt = photo.createdAt,
+                    // PENDING은 URL만 발급됐을 뿐 S3에 객체가 없을 수 있다. 서명해 줘도
+                    // 404가 될 URL이라, 프론트가 구분할 수 있게 null로 내린다.
+                    viewUrl = if (photo.status == PhotoStatus.PENDING) null else presignGet(photo.s3Key),
+                )
+            },
+            page = found.number,
+            size = found.size,
+            totalCount = found.totalElements,
+            hasNext = found.hasNext(),
+            viewUrlTtlSeconds = properties.s3.viewUrlTtl.seconds,
+        )
+    }
+
     fun summarize(galleryId: Long, photographerId: Long): PhotoSummary {
         galleryService.getOwned(galleryId, photographerId)
         return PhotoSummary(
@@ -97,6 +144,20 @@ class PhotoService(
         val extension = filename.substringAfterLast('.', "").lowercase()
         val suffix = if (extension.isBlank()) "" else ".$extension"
         return "galleries/$galleryId/${UUID.randomUUID()}$suffix"
+    }
+
+    private fun presignGet(key: String): String {
+        val getRequest = GetObjectRequest.builder()
+            .bucket(properties.s3.bucket)
+            .key(key)
+            .build()
+
+        val presignRequest = GetObjectPresignRequest.builder()
+            .signatureDuration(properties.s3.viewUrlTtl)
+            .getObjectRequest(getRequest)
+            .build()
+
+        return s3Presigner.presignGetObject(presignRequest).url().toExternalForm()
     }
 
     private fun presignPut(key: String, contentType: String): String {
@@ -133,3 +194,23 @@ data class PhotoEmbedding(val photoId: Long, val vector: FloatArray) {
 }
 
 data class PhotoSummary(val total: Long, val uploaded: Long, val embedded: Long)
+
+data class PhotoView(
+    val photoId: Long,
+    val s3Key: String,
+    val originalFilename: String,
+    val contentType: String,
+    val status: PhotoStatus,
+    val createdAt: Instant,
+    /** 서명된 GET URL. PENDING이면 null이다. 수명은 PhotoPage.viewUrlTtlSeconds. */
+    val viewUrl: String?,
+)
+
+data class PhotoPage(
+    val photos: List<PhotoView>,
+    val page: Int,
+    val size: Int,
+    val totalCount: Long,
+    val hasNext: Boolean,
+    val viewUrlTtlSeconds: Long,
+)

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
@@ -59,6 +60,19 @@ class PhotoController(
         val embeddings = request.embeddings.map { PhotoEmbedding(it.photoId, it.vector) }
         return CountResponse(photoService.applyEmbeddings(galleryId, principal.photographerId, embeddings))
     }
+
+    /**
+     * 조회 화면용 목록. 사진마다 서명된 GET URL이 붙어 온다.
+     * status를 생략하면 PENDING까지 전부 나온다.
+     */
+    @GetMapping
+    fun list(
+        @AuthenticationPrincipal principal: PhotographerPrincipal,
+        @PathVariable galleryId: Long,
+        @RequestParam(required = false) status: PhotoStatus?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "200") size: Int,
+    ): PhotoPage = photoService.list(galleryId, principal.photographerId, status, page, size)
 
     @GetMapping("/summary")
     fun summary(

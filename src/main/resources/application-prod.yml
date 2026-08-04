@@ -7,6 +7,7 @@
 #   /test-wes/prod/app.s3.bucket
 #   /test-wes/prod/springdoc.server-url
 #   /test-wes/prod/cors.allowed-origins
+#   /test-wes/prod/app.embedding.function-name
 spring:
   config:
     import: aws-parameterstore:/test-wes/prod/

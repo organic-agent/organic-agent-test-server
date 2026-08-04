@@ -59,6 +59,64 @@ class PhotoUploadIntegrationTest : IntegrationTest() {
     }
 
     @Test
+    fun `사진 목록은 업로드된 것에만 서명된 조회 URL을 붙인다`() {
+        val session = loginAs("hyungjun")
+        val galleryId = createGallery(session, "야외 촬영")
+        val photoIds = issueUploadUrls(session, galleryId, count = 3)
+
+        // 3장 중 2장만 업로드를 마쳤다고 통보한다.
+        mockMvc.perform(
+            post("/api/galleries/$galleryId/photos/complete")
+                .session(session)
+                .contentType("application/json")
+                .content("""{"photoIds":${photoIds.take(2)}}"""),
+        ).andExpect(status().isOk)
+
+        mockMvc.perform(get("/api/galleries/$galleryId/photos").session(session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.photos", hasSize<Any>(3)))
+            .andExpect(jsonPath("$.totalCount").value(3))
+            .andExpect(jsonPath("$.hasNext").value(false))
+            // 프론트가 목록 재조회 시점을 이 값으로 정한다(app.s3.view-url-ttl = 15m).
+            .andExpect(jsonPath("$.viewUrlTtlSeconds").value(900))
+            .andExpect(jsonPath("$.photos[0].viewUrl", containsString("X-Amz-Signature")))
+            // PENDING은 S3에 객체가 없을 수 있어 서명해 주지 않는다.
+            .andExpect(jsonPath("$.photos[2].status").value("PENDING"))
+            .andExpect(jsonPath("$.photos[2].viewUrl").doesNotExist())
+    }
+
+    @Test
+    fun `사진 목록은 status로 거를 수 있다`() {
+        val session = loginAs("hyungjun")
+        val galleryId = createGallery(session, "필터")
+        val photoIds = issueUploadUrls(session, galleryId, count = 3)
+
+        mockMvc.perform(
+            post("/api/galleries/$galleryId/photos/complete")
+                .session(session)
+                .contentType("application/json")
+                .content("""{"photoIds":${photoIds.take(2)}}"""),
+        ).andExpect(status().isOk)
+
+        mockMvc.perform(
+            get("/api/galleries/$galleryId/photos").session(session).param("status", "UPLOADED"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.photos", hasSize<Any>(2)))
+            .andExpect(jsonPath("$.totalCount").value(2))
+    }
+
+    @Test
+    fun `페이지 크기가 상한을 넘으면 400`() {
+        val session = loginAs("hyungjun")
+        val galleryId = createGallery(session, "페이지")
+
+        mockMvc.perform(
+            get("/api/galleries/$galleryId/photos").session(session).param("size", "1001"),
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
     fun `남의 갤러리에는 업로드 URL을 발급받을 수 없다`() {
         val ownerSession = loginAs("owner")
         val galleryId = createGallery(ownerSession, "남의 갤러리")

@@ -56,8 +56,16 @@ class Photo(
     val requiredId: Long
         get() = id ?: error("아직 저장되지 않은 Photo 다")
 
-    /** 프론트가 S3 업로드를 마쳤다고 알려올 때. */
+    /**
+     * 프론트가 S3 업로드를 마쳤다고 알려올 때.
+     *
+     * 이미 EMBEDDED면 건드리지 않는다. 지금은 임베딩 실행이 완료 통보 뒤에 오므로 이 경우가
+     * 생기지 않지만, 트리거를 S3 이벤트 같은 것으로 바꾸는 순간 완료 통보가 뒤늦게 도착해
+     * 방금 채운 EMBEDDED를 UPLOADED로 되돌린다. 그러면 벡터는 멀쩡한데 summary만 틀리는,
+     * 증상이 원인을 안 가리키는 상태가 된다.
+     */
     fun markUploaded() {
+        if (status == PhotoStatus.EMBEDDED) return
         status = PhotoStatus.UPLOADED
     }
 
@@ -71,9 +79,10 @@ class Photo(
 
     companion object {
         /**
-         * vector(512) 컬럼과 반드시 같아야 한다. 모델을 바꿔 차원이 달라지면
-         * 마이그레이션으로 컬럼 타입을 함께 바꿔야 한다.
+         * vector(768) 컬럼과 반드시 같아야 한다. DINOv2-base의 CLS 토큰 차원이고,
+         * 임베딩 Lambda의 EMBED_DIM 환경변수(인프라의 embedding_dimension 변수)도 같은 값이다.
+         * 모델을 바꿔 차원이 달라지면 마이그레이션으로 컬럼 타입을 함께 바꿔야 한다.
          */
-        const val EMBEDDING_DIMENSION = 512
+        const val EMBEDDING_DIMENSION = 768
     }
 }
