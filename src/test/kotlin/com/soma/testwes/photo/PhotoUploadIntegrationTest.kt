@@ -4,6 +4,7 @@ import com.jayway.jsonpath.JsonPath
 import com.soma.testwes.support.IntegrationTest
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.hasSize
+import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
 import org.springframework.mock.web.MockHttpSession
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
@@ -59,61 +60,84 @@ class PhotoUploadIntegrationTest : IntegrationTest() {
     }
 
     @Test
-    fun `사진 목록은 업로드된 것에만 서명된 조회 URL을 붙인다`() {
+    fun `업로드를 마친 사진은 서명된 조회 URL과 함께 목록에 나온다`() {
         val session = loginAs("hyungjun")
-        val galleryId = createGallery(session, "야외 촬영")
-        val photoIds = issueUploadUrls(session, galleryId, count = 3)
-
-        // 3장 중 2장만 업로드를 마쳤다고 통보한다.
-        mockMvc.perform(
-            post("/api/galleries/$galleryId/photos/complete")
-                .session(session)
-                .contentType("application/json")
-                .content("""{"photoIds":${photoIds.take(2)}}"""),
-        ).andExpect(status().isOk)
+        val galleryId = createGallery(session, "조회 화면")
+        val photoIds = issueUploadUrls(session, galleryId, count = 2)
+        completeUpload(session, galleryId, photoIds)
 
         mockMvc.perform(get("/api/galleries/$galleryId/photos").session(session))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.photos", hasSize<Any>(3)))
-            .andExpect(jsonPath("$.totalCount").value(3))
+            .andExpect(jsonPath("$.photos", hasSize<Any>(2)))
+            .andExpect(jsonPath("$.totalCount").value(2))
             .andExpect(jsonPath("$.hasNext").value(false))
-            // 프론트가 목록 재조회 시점을 이 값으로 정한다(app.s3.view-url-ttl = 15m).
-            .andExpect(jsonPath("$.viewUrlTtlSeconds").value(900))
+            // 버킷이 비공개라 이 URL이 브라우저가 이미지를 받을 유일한 통로다.
             .andExpect(jsonPath("$.photos[0].viewUrl", containsString("X-Amz-Signature")))
-            // PENDING은 S3에 객체가 없을 수 있어 서명해 주지 않는다.
-            .andExpect(jsonPath("$.photos[2].status").value("PENDING"))
-            .andExpect(jsonPath("$.photos[2].viewUrl").doesNotExist())
+            .andExpect(jsonPath("$.photos[0].s3Key", containsString("galleries/$galleryId/")))
+            .andExpect(jsonPath("$.photos[0].originalFilename").value("photo-1.jpg"))
     }
 
     @Test
-    fun `사진 목록은 status로 거를 수 있다`() {
+    fun `아직 올라오지 않은 사진에는 조회 URL이 없다`() {
         val session = loginAs("hyungjun")
-        val galleryId = createGallery(session, "필터")
+        val galleryId = createGallery(session, "발급만 한 갤러리")
+        issueUploadUrls(session, galleryId, count = 1)
+
+        // S3에 객체가 없는 상태라 URL을 주면 프론트가 깨진 이미지를 그린다.
+        mockMvc.perform(get("/api/galleries/$galleryId/photos").session(session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.photos[0].status").value("PENDING"))
+            .andExpect(jsonPath("$.photos[0].viewUrl", nullValue()))
+    }
+
+    @Test
+    fun `status로 걸러 받을 수 있다`() {
+        val session = loginAs("hyungjun")
+        val galleryId = createGallery(session, "섞인 갤러리")
         val photoIds = issueUploadUrls(session, galleryId, count = 3)
+        completeUpload(session, galleryId, photoIds.take(2))
 
-        mockMvc.perform(
-            post("/api/galleries/$galleryId/photos/complete")
-                .session(session)
-                .contentType("application/json")
-                .content("""{"photoIds":${photoIds.take(2)}}"""),
-        ).andExpect(status().isOk)
-
-        mockMvc.perform(
-            get("/api/galleries/$galleryId/photos").session(session).param("status", "UPLOADED"),
-        )
+        mockMvc.perform(get("/api/galleries/$galleryId/photos?status=UPLOADED").session(session))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.photos", hasSize<Any>(2)))
             .andExpect(jsonPath("$.totalCount").value(2))
     }
 
     @Test
-    fun `페이지 크기가 상한을 넘으면 400`() {
+    fun `페이지를 나눠 받으면 다음 페이지가 있음을 알려준다`() {
         val session = loginAs("hyungjun")
-        val galleryId = createGallery(session, "페이지")
+        val galleryId = createGallery(session, "수천 장 갤러리")
+        issueUploadUrls(session, galleryId, count = 3)
 
-        mockMvc.perform(
-            get("/api/galleries/$galleryId/photos").session(session).param("size", "1001"),
-        ).andExpect(status().isBadRequest)
+        mockMvc.perform(get("/api/galleries/$galleryId/photos?page=0&size=2").session(session))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.photos", hasSize<Any>(2)))
+            .andExpect(jsonPath("$.totalCount").value(3))
+            .andExpect(jsonPath("$.hasNext").value(true))
+
+        mockMvc.perform(get("/api/galleries/$galleryId/photos?page=1&size=2").session(session))
+            .andExpect(jsonPath("$.photos", hasSize<Any>(1)))
+            .andExpect(jsonPath("$.hasNext").value(false))
+    }
+
+    @Test
+    fun `한 번에 받을 수 있는 개수를 넘기면 400`() {
+        val session = loginAs("hyungjun")
+        val galleryId = createGallery(session, "과한 요청")
+
+        mockMvc.perform(get("/api/galleries/$galleryId/photos?size=1001").session(session))
+            .andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `남의 갤러리 사진 목록은 볼 수 없다`() {
+        val ownerSession = loginAs("owner")
+        val galleryId = createGallery(ownerSession, "남의 갤러리")
+
+        val strangerSession = loginAs("stranger")
+
+        mockMvc.perform(get("/api/galleries/$galleryId/photos").session(strangerSession))
+            .andExpect(status().isForbidden)
     }
 
     @Test
@@ -192,5 +216,14 @@ class PhotoUploadIntegrationTest : IntegrationTest() {
             .andReturn().response.contentAsString
 
         return JsonPath.read<List<Int>>(body, "$.uploads[*].photoId").map { it.toLong() }
+    }
+
+    private fun completeUpload(session: MockHttpSession, galleryId: Long, photoIds: List<Long>) {
+        mockMvc.perform(
+            post("/api/galleries/$galleryId/photos/complete")
+                .session(session)
+                .contentType("application/json")
+                .content("""{"photoIds":$photoIds}"""),
+        ).andExpect(status().isOk)
     }
 }

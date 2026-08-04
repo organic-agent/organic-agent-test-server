@@ -50,7 +50,12 @@ class SecurityConfig(
         http
             .cors { it.configurationSource(corsConfigurationSource()) }
             // 프론트가 별도 오리진이라 CSRF 토큰 왕복을 붙이기 전까지는 끈다.
-            // 세션 쿠키의 SameSite=Lax 기본값이 1차 방어선이다.
+            //
+            // prod의 세션 쿠키는 SameSite=None이라(별도 사이트인 프론트가 써야 한다)
+            // SameSite가 더 이상 방어선이 아니다. 지금 남은 방어선은 위의 CORS 오리진
+            // 허용목록 하나뿐이다 — 상태를 바꾸는 엔드포인트가 전부 application/json을
+            // 요구해 프리플라이트를 타고, 허용목록 밖 오리진은 거기서 막힌다.
+            // 폼 전송처럼 프리플라이트 없이 나가는 요청까지 막으려면 CSRF 토큰이 필요하다.
             .csrf { it.disable() }
             .securityContext { it.securityContextRepository(securityContextRepository) }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED) }
