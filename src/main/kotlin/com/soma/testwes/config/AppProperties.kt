@@ -11,6 +11,7 @@ data class AppProperties(
     data class S3(
         val bucket: String,
         val presignedUrlTtl: Duration,
+        val viewUrlTtl: Duration,
         val maxBatchSize: Int,
     )
 
